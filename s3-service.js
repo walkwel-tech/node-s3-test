@@ -1,49 +1,138 @@
-const AWS = require('aws-sdk');
 const fs = require("fs");
-const Bucket = process.env.AWS_S3_BUCKET_NAME
-const S3 = new AWS.S3()
+const AWS = require('aws-sdk');
 
-const listAllObjects = async () => {
+const { prompt } = require('inquirer');
+const S3 = new AWS.S3();
+const BUCKET = process.env.AWS_S3_BUCKET_NAME;
+const MAXKEYS = process.env.MAX_KEYS;
+let params = {
+  Bucket: BUCKET,
+  MaxKeys: MAXKEYS
+};
+
+
+const listAllObjects = async (params) => {
   try {
-    const params = {
-      Bucket,
-    };
-    let promise = new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const objectPromise = S3.listObjects(params).promise()
       objectPromise.then((obj) => resolve(obj)).catch((err) => reject(err))
     })
-    return promise;
   }
   catch (error) {
     throw error;
   }
 }
 
-const list = () => {
+const loadAllFilesWithPagination = (params) => {
   try {
-    listAllObjects().then(
-      (objects) => {
-        if (objects.length) {
-          objects.Contents.forEach((key) => {
-            console.log(`${key.Key} found`)
-          })
-        }
-        else {
-          console.log("No files found")
-        }
-      })
+    return new Promise((resolve, reject) => {
+      const objectPromise = S3.listObjects(params).promise()
+      objectPromise.then((obj) => resolve(obj)).catch((err) => reject(err))
+    })
   }
   catch (error) {
     throw error;
   }
 }
+let allObjectsData = [];
+let page = 0;
+const openPrompt = (Marker) => {
+  prompt({
+    type: 'input',
+    name: 'option',
+    message: 'Enter N for next P for previous Q for quit'
+  }).then(async (option) => {
+    switch (option.option) {
+      case 'Q':
+      case 'q':
+        return;
+
+      case 'n':
+      case 'N':
+        page++;
+        await list(Marker);
+        return;
+
+      case 'p':
+      case 'P':
+        if (page === 0) {
+          console.log("No contnet to list enter N");
+          openPrompt()
+        }
+        else { listPrevious() }
+        break;
+
+      default:
+        break;
+    }
+  })
+}
+
+const listPrevious = async () => {
+  page--;
+  let content = allObjectsData[page];
+  if (content.length) {
+    allObjectsData[page].forEach((obj) => {
+      console.log(`${obj.Key} found`);
+    })
+  }
+  openPrompt()
+}
+const list = async (marker = null) => {
+  try {
+    if (marker) {
+      params.Marker = marker
+    }
+    const objects = await loadAllFilesWithPagination(params);
+    if (objects.Contents.length) {
+      allObjectsData.push(objects.Contents)
+      Marker = objects.Contents[objects.Contents.length - 1].Key;
+      objects.Contents.forEach((obj) => {
+        console.log(`${obj.Key} found`);
+      })
+      openPrompt(Marker)
+    }
+    else {
+      console.log('No objects found ');
+    }
+    return objects;
+
+  }
+  catch (error) {
+    throw error;
+  }
+}
+
+const serchObject = async (string) => {
+  try {
+    const params = {
+      Bucket: BUCKET,
+    };
+    const objects = await listAllObjects(params);
+    let key = "";
+    let searchArray = []
+    objects.Contents.map((Key) => {
+      key = Key.Key.split('/').reverse()[0];
+      regex = RegExp(string, "i");
+      if (regex.test(key)) {
+        searchArray.push(Key)
+      }
+      return key;
+    })
+    return searchArray;
+  }
+  catch (error) {
+    throw error;
+  }
+}
+
 
 const upload = (filePath, bucketpath = null) => {
   try {
     const file = fs.readFileSync(filePath);
     const filename = filePath.split('/').reverse()[0];
     const params = {
-      Bucket: process.env.AWS_S3_BUCKET_NAME,
+      Bucket: BUCKET,
       Key: filename,
       Body: JSON.stringify(file, null, 2)
     };
@@ -60,28 +149,8 @@ const upload = (filePath, bucketpath = null) => {
     throw error;
   }
 }
-const serchObject = async (string) => {
-  try {
-    const objects = await listAllObjects();
-    let key = "";
-    let match = ""
-    let searchArray = []
-    objects.Contents.map((Key) => {
-      key = Key.Key.split('/').reverse()[0];
-      match = key.includes(string);
-      if (match) {
-        searchArray.push(Key)
-      }
-      return key;
-    })
-    return searchArray;
-  }
-  catch (error) {
-    throw error;
-  }
-}
 
-const search = async (string) => {
+const search = async (string, page = 1) => {
   try {
     const searchArray = await serchObject(string);
     if (searchArray.length) {
@@ -101,10 +170,10 @@ const remove = async (string) => {
     const searchArray = await serchObject(string);
     if (searchArray.length) {
       const Objects = searchArray.map(data => ({
-        Key: data.Key || data,
+        Key: data.Key,
       }))
       const deleteObjectPromise = S3.deleteObjects({
-        Bucket,
+        Bucket: BUCKET,
         Delete: {
           Objects,
           Quiet: false
@@ -123,6 +192,8 @@ const remove = async (string) => {
     console.log(error)
   }
 }
+
+
 module.exports = {
   list,
   upload,

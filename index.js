@@ -1,17 +1,16 @@
 require("dotenv").config();
 const program = require('commander');
 const { prompt } = require('inquirer');
-
 const { list, upload, search, remove } = require('./s3-service');
 
 program
   .command('list').action(() => {
-    list();
+    list()
+ 
   });
 
 program
   .command('upload <filepath>').action((filepath) => {
-    console.log('filepath', filepath)
     prompt({
       type: 'input',
       name: 'option',
@@ -21,7 +20,7 @@ program
         prompt({
           type: 'input',
           name: 'bucketpath',
-          message: 'Enter folder name'
+          message: 'Enter Bucket path'
         }).then(bucketpath => {
           upload(filepath, bucketpath.bucketpath);
         })
@@ -34,13 +33,12 @@ program
 
 program
   .command('search <regex>').action((string) => {
-    search(string);
+    search(string, 1);
   })
 
 program
   .command('delete <regex>').action((string) => {
     remove(string);
   });
-
 
 program.parse(process.argv);
